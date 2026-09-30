@@ -16,7 +16,7 @@ It is based on the code of Qiskit and Qiskit Nature.
 
 ## Installation
 
-Download this package from [tVHA homepage](https://github.com/cpossel/tvha) or clone it via git `git clone git@github.com:cpossel/tvha.git`.
+Download this package from [tVHA homepage](https://github.com/clemens-sauer-possel/tvha) or clone it via git `git clone git@github.com:clemens-sauer-possel/tvha.git`.
 
 Go into the main folder of the downloaded folder and run
 
@@ -166,7 +166,7 @@ Below guide assumes Gaussian is installed in `C:\G16W\`. You should adjust the p
 
 ## Troubleshooting
 
-If you have issues and the documentation didn't help, feel free to open an [issue](https://github.com/cpossel/tvha/issues) (see also [CONTRIBUTING](CONTRIBUTING.md)) or write an email to <clemens.possel@ict.fraunhofer.de>.
+If you have issues and the documentation didn't help, feel free to open an [issue](https://github.com/clemens-sauer-possel/tvha/issues) (see also [CONTRIBUTING](CONTRIBUTING.md)) or write an email to <clemens.sauer.possel@ict.fraunhofer.de>.
 Be aware that this software comes with no warranty and all support is purely voluntarily.
 
 ## Contribute your own code
