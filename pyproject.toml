@@ -17,11 +17,10 @@ dependencies = [
     "pyjson5>=1.6",
     "pyscf>=2.9;sys_platform=='linux'",
     "ruamel.yaml>=0.19.1",
-    "qiskit>=1.4,<2",
-    "qiskit_algorithms>=0.3.1",
-    # "qiskit_machine_learning>=0.9", # not compatible with qiskit<2
-    "qiskit-machine-learning@git+https://github.com/qiskit-community/qiskit-machine-learning.git@2ecf05642b16a1003d91de0508ed961308753889",
-    "qiskit_nature>=0.7",
+    "qiskit>=1.4",
+    "qiskit_algorithms>=0.4.0",
+    "qiskit_machine_learning>=0.9",
+    "qiskit_nature>=0.8.0",
     "tqdm>=4.67",
 ]
 
