@@ -35,7 +35,7 @@ def mypy(session: nox.Session) -> None:
     session.run("mypy", ".")
 
 
-@nox.session(python=["3.13"], reuse_venv=True)
+@nox.session(python=["3.12", "3.13", "3.14"], reuse_venv=True)
 def pytest(session: nox.Session) -> None:
     """Test suite using pytest."""
     session.install("pytest", ".")

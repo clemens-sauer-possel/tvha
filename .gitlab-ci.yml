@@ -47,7 +47,7 @@ prepare:
     - when: manual
       allow_failure: true
   script:
-    - pip install build setuptools-scm nox
+    - pip install build setuptools-scm nox[pbs]
 
 ruff-check:
   stage: codecheck
@@ -59,7 +59,7 @@ ruff-check:
   interruptible: true
   allow_failure: true
   script:
-    - pip install nox
+    - pip install nox[pbs]
     - nox -s ruff
 
 mypy-check:
@@ -72,7 +72,7 @@ mypy-check:
   interruptible: true
   allow_failure: true
   script:
-    - pip install nox
+    - pip install nox[pbs]
     - nox -s mypy
 
 pytest:
@@ -84,5 +84,5 @@ pytest:
     policy: pull
   interruptible: false
   script:
-    - pip install nox
+    - pip install nox[pbs]
     - nox -s pytest
