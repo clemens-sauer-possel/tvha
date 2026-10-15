@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 from qiskit import QuantumCircuit
@@ -355,6 +356,12 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             return index - 1, self.possible_thresholds_gamma[index - 1]
         # All other cases
         return index, self.possible_thresholds_gamma[index]
+
+    def get_thresholds_gamma(self, initial_thresholds_gamma: Iterable[float] | None) -> list[float]:
+        """Gets sorted list of final truncation thresholds with removed duplicates."""
+        if initial_thresholds_gamma is None:
+            return self.possible_thresholds_gamma
+        return sorted({self.get_threshold_gamma(t)[1] for t in initial_thresholds_gamma})
 
     def _get_hamiltonian_gamma(self, threshold_gamma: float = 1.0) -> FermionicOp:
         """Returns the Hamiltonian associated with parameter gamma.
