@@ -117,16 +117,6 @@ class VHAPlots(ComputationFileCache):
         self.numerical_energies = self.get_numerical_energy()
         self._energy_data = self.data
 
-    def _get_final_thresholds_gamma(self, thresholds_gamma: float | Sequence[float]) -> list[float]:
-        """Gets sorted list of final truncation thresholds with removed duplicates."""
-        if not isinstance(thresholds_gamma, Iterable):
-            thresholds_gamma = [thresholds_gamma]
-        return sorted({self._vha_dummy.get_threshold_gamma(t)[1] for t in thresholds_gamma})
-
-    def _get_final_threshold_gamma(self, threshold_gamma: float) -> float:
-        """Gets final truncation threshold."""
-        return self._vha_dummy.get_threshold_gamma(threshold_gamma)[1]
-
     def _init_alternative_ansatze(self) -> None:
         ansatzes = {}
 
@@ -923,12 +913,9 @@ class VHAPlots(ComputationFileCache):
             list_of_max_evals = list(max_evals)
         else:
             list_of_max_evals = [max_evals] * len(list_of_trotter_steps)
-        if list_of_threshold_gamma is None:
-            list_of_threshold_gamma = self._vha_dummy.possible_thresholds_gamma
-        else:
-            list_of_threshold_gamma = self._get_final_thresholds_gamma(
-                thresholds_gamma=list_of_threshold_gamma
-            )
+        list_of_threshold_gamma = self._vha_dummy.get_thresholds_gamma(
+            thresholds_gamma=list_of_threshold_gamma
+        )
 
         if len(list_of_trotter_steps) > len(colors_tvha):
             raise ValueError(
@@ -1247,7 +1234,9 @@ class VHAPlots(ComputationFileCache):
             if isinstance(max_evals, Iterable)
             else [max_evals] * len(list_of_trotter_steps)
         )
-        list_of_threshold_gamma = self._get_final_thresholds_gamma(thresholds_gamma=threshold_gamma)
+        list_of_threshold_gamma = self._vha_dummy.get_thresholds_gamma(
+            threshold_gamma if isinstance(threshold_gamma, Iterable) else [threshold_gamma]
+        )
 
         if len(list_of_threshold_gamma) > len(colors_tvha):
             raise ValueError(
@@ -1430,12 +1419,7 @@ class VHAPlots(ComputationFileCache):
             list_of_max_evals = sorted(max_evals)
         else:
             list_of_max_evals = [max_evals] * len(list_of_trotter_steps)
-        if list_of_threshold_gamma is None:
-            list_of_threshold_gamma = sorted(self._vha_dummy.possible_thresholds_gamma)
-        else:
-            list_of_threshold_gamma = sorted(
-                self._get_final_thresholds_gamma(thresholds_gamma=list_of_threshold_gamma)
-            )
+        list_of_threshold_gamma = self._vha_dummy.get_thresholds_gamma(list_of_threshold_gamma)
 
         datapoints = self.get_datapoints(
             datapoints=[
@@ -1755,9 +1739,9 @@ class VHAPlots(ComputationFileCache):
 
     def plot_energy_over_noise(
         self,
-        list_of_cx_error_prob: Sequence[float],
-        trotter_steps: int | Sequence[int] = 1,
-        threshold_gamma: float | Sequence[float] = 1.0,
+        list_of_cx_error_prob: Iterable[float],
+        trotter_steps: int | Iterable[int] = 1,
+        threshold_gamma: float | Iterable[float] = 1.0,
         max_evals: int = 1000,
         add_title: bool = True,
         skip_uccsdt: bool = False,
@@ -1779,10 +1763,13 @@ class VHAPlots(ComputationFileCache):
             skip_uccsdt: whether to skip calculation of UCCSDT (useful for larger systems
                 as it might take lots of time).
         """
+        list_of_cx_error_prob = list(list_of_cx_error_prob)
         list_of_trotter_steps = (
             list(trotter_steps) if isinstance(trotter_steps, Iterable) else [trotter_steps]
         )
-        list_of_threshold_gamma = self._get_final_thresholds_gamma(thresholds_gamma=threshold_gamma)
+        list_of_threshold_gamma = self._vha_dummy.get_thresholds_gamma(
+            threshold_gamma if isinstance(threshold_gamma, Iterable) else [threshold_gamma]
+        )
 
         # Retrieve all needed energy data
         datapoints = []
