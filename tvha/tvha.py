@@ -693,26 +693,28 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             best_params = {}
             for threshold_gamma in self.possible_thresholds_gamma:
                 if np.isclose(threshold_gamma, 0.0):
-                    continue
-                operator = self.mapper.map(
-                    self._get_hamiltonian_gamma(threshold_gamma=threshold_gamma)
-                )
-                operator_grouped = operator.group_commuting()
-                operator_trotterized = PauliEvolutionGate(
-                    operator_grouped,
-                    synthesis=(
-                        LieTrotter()
-                        if trotterization_order == 1
-                        else SuzukiTrotter(order=trotterization_order)
-                    ),
-                )
-                circuit = QuantumCircuit(operator_trotterized.num_qubits)
-                circuit.append(operator_trotterized, range(operator_trotterized.num_qubits))
-                num_gates = circuit.decompose().num_nonlocal_gates() + num_gates_alpha_beta
-                depth = (
-                    circuit.decompose().depth(lambda instr: len(instr.qubits) > 1)
-                    + depth_alpha_beta
-                )
+                    num_gates = num_gates_alpha_beta
+                    depth = depth_alpha_beta
+                else:
+                    operator = self.mapper.map(
+                        self._get_hamiltonian_gamma(threshold_gamma=threshold_gamma)
+                    )
+                    operator_grouped = operator.group_commuting()
+                    operator_trotterized = PauliEvolutionGate(
+                        operator_grouped,
+                        synthesis=(
+                            LieTrotter()
+                            if trotterization_order == 1
+                            else SuzukiTrotter(order=trotterization_order)
+                        ),
+                    )
+                    circuit = QuantumCircuit(operator_trotterized.num_qubits)
+                    circuit.append(operator_trotterized, range(operator_trotterized.num_qubits))
+                    num_gates = circuit.decompose().num_nonlocal_gates() + num_gates_alpha_beta
+                    depth = (
+                        circuit.decompose().depth(lambda instr: len(instr.qubits) > 1)
+                        + depth_alpha_beta
+                    )
 
                 if decoherence_time and two_qubit_gate_length:
                     trotter_steps_max = math.floor(
