@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 
 import numpy as np
 from qiskit import QuantumCircuit
@@ -616,6 +617,141 @@ class VariationalHamiltonianAnsatz(BlueprintCircuit):
             block = circuit.to_instruction()
 
         self.append(block, self.qubits)
+
+    def get_recommended_parameters(
+        self,
+        two_qubit_gate_error: float,
+        two_qubit_gate_length: float | None = None,
+        decoherence_time: float | None = None,
+        list_of_threshold_gamma: Iterable[float] | None = None,
+        trotterization_orders: Iterable[int] = (1, 2),
+    ) -> list[dict[str, int | float]]:
+        """Gets recommended parameters based on 2-qubit gate error.
+
+        The parameters are estimated using simple assumptions about success probability and
+        duration/decoherence.
+        The best choice of parameters is dependent on multiple additional factors that aren't
+        considered here:
+        - connectivity / layout of compiled circuit
+        - propagation of errors through the circuit (some errors might even cancel out each other)
+        - errors from 1-qubit gates
+        - gate errors might vary for actually used gates (median is used for our estimate)
+        - error mitigation techniques
+        - errors on hardware are time dependent
+
+        2-qubit gate length and decoherence time can be supplied for a better
+        parameter estimate based additionally on decoherence.
+
+        These are the inequality equations used for the estimation:
+        estimated_duration = depth * two_qubit_gate_length * trotter_steps !< decoherence_time
+        estimated_success_probability = (1 - two_qubit_gate_error)**(num_gates * trotter_steps)
+            !>= 1/e
+
+        The best parameter set can't be determined a priori.
+        Only the Pareto front based on above simple estimation is available.
+        As rule of thumb to avoid calculation of all parameter sets on the Pareto front, one should
+        choose some parameter sets with a truncation threshold ('threshold_gamma') larger than 0.5.
+        Dependent on usage of error models and the other above mentioned factors, the best
+        parameter set might differ from the recommended parameters.
+
+        Args:
+            two_qubit_gate_error: 2-qubit gate error (layered).
+            two_qubit_gate_length: 2-qubit gate duration in seconds (median).
+            decoherence_time: Device T2 in seconds (median).
+            list_of_threshold_gamma: The truncation thresholds to use for this plot.
+                If 'None', all possible truncation thresholds are used.
+            trotterization_orders: The trotterization orders (1: Lie-Trotter, >=2: Suzuki-Trotter)
+
+        Returns:
+            list of dict of parameter names and their values.
+        """
+        list_of_threshold_gamma = self.get_thresholds_gamma(list_of_threshold_gamma)
+
+        best_parameters_within_error_bounds = []
+        for trotterization_order in trotterization_orders:
+            operator_alpha_beta = self.mapper.map(
+                self._get_hamiltonian_alpha() + self._get_hamiltonian_beta()
+            )
+            operator_alpha_beta_grouped = operator_alpha_beta.group_commuting()
+            operator_alpha_beta_trotterized = PauliEvolutionGate(
+                operator_alpha_beta_grouped,
+                synthesis=(
+                    LieTrotter()
+                    if trotterization_order == 1
+                    else SuzukiTrotter(order=trotterization_order)
+                ),
+            )
+            circuit_alpha_beta = QuantumCircuit(operator_alpha_beta_trotterized.num_qubits)
+            circuit_alpha_beta.append(
+                operator_alpha_beta_trotterized, range(operator_alpha_beta_trotterized.num_qubits)
+            )
+            num_gates_alpha_beta = circuit_alpha_beta.decompose().num_nonlocal_gates()
+            depth_alpha_beta = circuit_alpha_beta.decompose().depth(
+                lambda instr: len(instr.qubits) > 1
+            )
+
+            best_params = {}
+            for threshold_gamma in self.possible_thresholds_gamma:
+                if np.isclose(threshold_gamma, 0.0):
+                    continue
+                operator = self.mapper.map(
+                    self._get_hamiltonian_gamma(threshold_gamma=threshold_gamma)
+                )
+                operator_grouped = operator.group_commuting()
+                operator_trotterized = PauliEvolutionGate(
+                    operator_grouped,
+                    synthesis=(
+                        LieTrotter()
+                        if trotterization_order == 1
+                        else SuzukiTrotter(order=trotterization_order)
+                    ),
+                )
+                circuit = QuantumCircuit(operator_trotterized.num_qubits)
+                circuit.append(operator_trotterized, range(operator_trotterized.num_qubits))
+                num_gates = circuit.decompose().num_nonlocal_gates() + num_gates_alpha_beta
+                depth = (
+                    circuit.decompose().depth(lambda instr: len(instr.qubits) > 1)
+                    + depth_alpha_beta
+                )
+
+                if decoherence_time and two_qubit_gate_length:
+                    trotter_steps_max = math.floor(
+                        min(
+                            [
+                                decoherence_time / (depth * two_qubit_gate_length),
+                                1 / (num_gates * two_qubit_gate_error),
+                            ]
+                        )
+                    )
+                else:
+                    trotter_steps_max = math.floor(1 / (num_gates * two_qubit_gate_error))
+
+                if trotter_steps_max < 1:
+                    break
+                if best_params.get(trotter_steps_max) is None:
+                    best_params[trotter_steps_max] = []
+                params = {
+                    "trotterization_order": trotterization_order,
+                    "threshold_gamma": threshold_gamma,
+                    "trotter_steps": trotter_steps_max,
+                    "estimated_success_probability": (1 - two_qubit_gate_error)
+                    ** (num_gates * trotter_steps_max),
+                }
+                if decoherence_time and two_qubit_gate_length:
+                    params["estimated_duration"] = depth * two_qubit_gate_length * trotter_steps_max
+                best_params[trotter_steps_max].append(params)
+
+            for entries in best_params.values():
+                best_entry = max(entries, key=lambda e: e["threshold_gamma"])
+                best_parameters_within_error_bounds.append(best_entry)
+
+        if not best_parameters_within_error_bounds:
+            logger.warning(
+                "Error rates are too high (2-qubit gate error = %s). "
+                "No suitable parameters are found.",
+                two_qubit_gate_error,
+            )
+        return sorted(best_parameters_within_error_bounds, key=lambda p: p["threshold_gamma"])
 
 
 def print_hamiltonian(
