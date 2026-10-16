@@ -32,7 +32,7 @@ molecules:
   H_2:
     basis_set: "sto3g"
     plot_recommended_parameters:
-      list_of_cx_error_prob: [2e-3, 5e-3, 1e-2, 2e-2]
+      list_of_cx_error_prob: [2e-3, 5e-3, 1e-2]
     plot_energy_over_trotter:
       threshold_gamma: [0.5, 1.0]
     plot_energy_over_noise:

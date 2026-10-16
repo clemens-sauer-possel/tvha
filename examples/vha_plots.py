@@ -2034,6 +2034,9 @@ class VHAPlots(ComputationFileCache):
         ax.yaxis.set_major_formatter(ScalarFormatter())
         ax.yaxis.set_minor_locator(SymmetricalLogLocator(linthresh=linthresh, base=10, subs=[2, 5]))
         ax.yaxis.set_minor_formatter(ScalarFormatter())
+        ax.tick_params(
+            axis="y", which="both", left=True, right=True, labelleft=True, labelright=False
+        )
 
         plt.legend(title="CX error probability")
         if add_title:
