@@ -4,6 +4,7 @@ The plots help investigate tVHA and tune it.
 """
 
 import ast
+import bisect
 import itertools
 import json
 import logging
@@ -16,7 +17,8 @@ import numpy as np
 import pandas as pd
 import qiskit_aer.noise as noise
 from computation_cache.computation_file_cache import ComputationFileCache
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import Locator, MaxNLocator, ScalarFormatter, SymmetricalLogLocator
+from matplotlib.transforms import Transform
 from pyscf import gto, scf
 from qiskit.circuit.library import BlueprintCircuit
 from qiskit.primitives import Estimator as StatevectorEstimator
@@ -84,6 +86,62 @@ colors_ucc = [color_circle[3], color_circle[5]]
 color_hea = color_scheme_fhg["Orange"]
 color_hf = color_scheme_fhg["Himmelblau (mittel)"]
 color_fci = color_scheme_fhg["Gold"]
+
+
+class SymlogMaxNLocator(Locator):
+    """Combination of MaxNLocator for linear region and SymmetricalLogLocator for log region."""
+
+    def __init__(
+        self,
+        nbins: int | Literal["auto"] | None = 10,
+        steps: Sequence[float] | None = None,
+        integer: bool = False,
+        symmetric: bool = False,
+        prune: Literal["lower", "upper", "both"] | None = None,
+        min_n_ticks: int = 2,
+        transform: Transform = None,
+        subs: Sequence[float] | None = None,
+        linthresh: float | None = None,
+        base: float | None = None,
+    ) -> None:
+        """Combination of MaxNLocator for linear region and SymmetricalLogLocator for log region.
+
+        See docs of MaxNLocator and SymmetricalLogLocator for further description.
+        """
+        self.linthresh = linthresh
+        self.maxn = MaxNLocator(
+            nbins=nbins,
+            steps=steps,
+            integer=integer,
+            symmetric=symmetric,
+            prune=prune,
+            min_n_ticks=min_n_ticks,
+        )
+        self.symlog = SymmetricalLogLocator(
+            transform=transform, subs=subs, linthresh=linthresh, base=base
+        )
+
+    def __call__(self) -> list:
+        """Return the locations of the ticks."""
+        vmin, vmax = self.axis.get_view_interval()
+        ticks = []
+
+        # Linear region: |y| <= linthresh
+        lin_vmin = max(vmin, -self.linthresh)
+        lin_vmax = min(vmax, self.linthresh)
+        if lin_vmin <= lin_vmax:
+            lin_ticks = self.maxn.tick_values(lin_vmin, lin_vmax)
+            ticks.extend(t for t in lin_ticks if -self.linthresh <= t <= self.linthresh)
+
+        # Log region: y < -linthresh and y > linthresh
+        if vmin < -self.linthresh:
+            neg_ticks = self.symlog.tick_values(vmin, -self.linthresh)
+            ticks.extend(t for t in neg_ticks if t <= -self.linthresh)
+        if vmax > self.linthresh:
+            pos_ticks = self.symlog.tick_values(self.linthresh, vmax)
+            ticks.extend(t for t in pos_ticks if t >= self.linthresh)
+
+        return sorted(set(ticks))
 
 
 class VHAPlots(ComputationFileCache):
@@ -1926,6 +1984,86 @@ class VHAPlots(ComputationFileCache):
         plt.savefig(self.output_path.joinpath(filename), format="svg")
         plt.close()
 
+    def plot_recommended_parameters(
+        self,
+        list_of_cx_error_prob: Iterable[float],
+        list_of_threshold_gamma: Iterable[float] | None = None,
+        add_title: bool = True,
+    ) -> None:
+        """Plots truncation threshold and number of Trotter steps recommended for give CX error.
+
+        Args:
+            list_of_cx_error_prob: The median (layered) CX error probabilities to use.
+            list_of_threshold_gamma: The truncation thresholds to use for this plot.
+                If 'None', all possible truncation thresholds are used.
+            add_title: Whether to add a title to the plot.
+        """
+        list_of_cx_error_prob = sorted(list_of_cx_error_prob)
+        cx_error_ibm_phoenix = 2.691e-3  # 2Q error (layered) from ibm_phoenix (13th Oct 2026)
+        ibm_index = bisect.bisect_left(list_of_cx_error_prob, cx_error_ibm_phoenix)
+        list_of_cx_error_prob.insert(ibm_index, cx_error_ibm_phoenix)
+
+        colors = list(color_circle)
+        colors.insert(ibm_index, color_scheme_fhg["Orange"])
+
+        ax = plt.figure().gca()
+        for i, cx_error_prob in enumerate(list_of_cx_error_prob):
+            params = self._vha_dummy.get_recommended_parameters(
+                two_qubit_gate_error=cx_error_prob,
+                list_of_threshold_gamma=list_of_threshold_gamma,
+                trotterization_orders=[1],
+            )
+            if not params:
+                continue
+            thresholds_gamma = [p["threshold_gamma"] for p in params]
+            trotter_steps = [p["trotter_steps"] for p in params]
+            plt.plot(
+                thresholds_gamma,
+                trotter_steps,
+                label=f"{cx_error_prob * 100:.4g}%",
+                marker="x",
+                linestyle="dotted",
+                color=colors[i % len(colors)],
+            )
+        plt.xlabel("Truncation threshold")
+        plt.ylabel("Number of Trotter steps")
+        linthresh = 10
+        ax.set_yscale("symlog", linthresh=linthresh)
+
+        ax.yaxis.set_major_locator(SymlogMaxNLocator(integer=True, linthresh=linthresh, base=10))
+        ax.yaxis.set_major_formatter(ScalarFormatter())
+        ax.yaxis.set_minor_locator(SymmetricalLogLocator(linthresh=linthresh, base=10, subs=[2, 5]))
+        ax.yaxis.set_minor_formatter(ScalarFormatter())
+
+        plt.legend(title="CX error probability")
+        if add_title:
+            required_cx_error_uccsd = (
+                1 / self.get_reference_UCC_circuit_counts(excitations=[1, 2])["num_nonlocal_gates"]
+            )
+            required_cx_error_uccsdt = (
+                1
+                / self.get_reference_UCC_circuit_counts(excitations=[1, 2, 3])["num_nonlocal_gates"]
+            )
+            required_cx_error_hea = (
+                1 / self.get_reference_HEA_circuit_counts()["num_nonlocal_gates"]
+            )
+            self._vha_dummy._build()  # noqa: SLF001
+            required_cx_error_vha = 1 / self._vha_dummy.decompose(reps=4).num_nonlocal_gates()
+
+            plt.title(
+                f"Recommended parameters for tVHA (${self.molecule_name}$)\n"
+                f"(required CX error UCCSD: {required_cx_error_uccsd * 100:.2g}%, "
+                f"UCCSDT: {required_cx_error_uccsdt * 100:.2g}%,\n"
+                f"HEA: {required_cx_error_hea * 100:.2g}%, "
+                f"VHA (1 Trotter step): {required_cx_error_vha * 100:.2g}%)"
+            )
+
+        filename = f"{self.molecule_name}_recommended_params_"
+        filename += "_".join(f"{cx_error_prob:.4g}" for cx_error_prob in list_of_cx_error_prob)
+        filename += ".svg"
+        plt.savefig(self.output_path.joinpath(filename), format="svg")
+        plt.close()
+
 
 def plot_parameter_count(
     output_path: Path,
@@ -2310,6 +2448,12 @@ def main() -> None:
 
     # ---------------------------------------------------------------------------------------------
     # --- GENERATE PLOTS --------------------------------------------------------------------------
+
+    if plotting_config.get("plot_recommended_parameters", False):
+        plot_config = molecule_plots_config.get("plot_recommended_parameters", {})
+        print("Plotting recommended parameters")
+        vha_plots.plot_recommended_parameters(add_title=add_title, **plot_config)
+        print("Done.")
 
     if plotting_config.get("plot_histograms", False):
         print("Plotting histograms...")
